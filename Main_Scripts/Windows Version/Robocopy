@@ -1,0 +1,98 @@
+# Get remote hosts from text file
+$remoteHosts = Get-Content -Path "C:\SDPU\WindowsUpdate\Old_OS_PCs.txt"
+
+# Define package file and destination
+$packageFile = "C:\SDPU\WindowsUpdate"
+$destinationRoot = "C$\SDPU"
+$destinationChild = "WindowsUpdate"
+$destination = "$destinationRoot\$destinationChild"
+$fileName = "C:\SDPU\WindowsUpdate\22H2\Win 11_22H2.msu"
+
+# Create array to store results
+$results = @()
+
+# Initialize count variable
+$Count = 0
+
+# Get total number of computers
+$CompAmt = $remoteHosts.Count
+
+Clear-Host
+
+# Loop through each remote host
+foreach ($remoteHost in $remoteHosts) {
+    $Count++
+    Write-Host "Running on $remoteHost ($Count of $CompAmt)" -ForegroundColor Yellow
+
+    # Check if remote host is online
+    if (!(Test-Connection -ComputerName $remoteHost -Count 1 -Quiet)) {
+        Write-Host "Host $remoteHost is offline, skipping..." -ForegroundColor Yellow
+        $results += [PSCustomObject]@{
+            ComputerName = $remoteHost
+            FileExists   = $false
+            Copied       = $false
+            Status       = "Offline"
+        }
+        continue
+    }
+
+    # Check if destination folder exists
+    $destPath = "\\$remoteHost\$destinationRoot"
+    if (!(Test-Path -Path $destPath)) {
+        # Destination root folder does not exist, create it
+        New-Item -ItemType Directory -Force -Path $destPath | Out-Null
+        Write-Host "Destination root folder created on $remoteHost" -ForegroundColor Cyan
+    }
+
+    # Check if destination child folder exists
+    $destChildPath = "\\$remoteHost\$destination"
+    if (!(Test-Path -Path $destChildPath)) {
+        # Destination child folder does not exist, create it
+        New-Item -ItemType Directory -Force -Path $destChildPath | Out-Null
+        Write-Host "Destination child folder created on $remoteHost" -ForegroundColor Cyan
+    }
+
+    # Check if file exists
+    $filePath = "$destination\$fileName"
+
+    if (Test-Path -Path "\\$remoteHost\$filePath") {
+        # File exists, write message to host
+        Write-Host "File already exists on $remoteHost, skipping..." -ForegroundColor Yellow
+        # File exists, add result to array
+        $results += [PSCustomObject]@{
+            ComputerName = $remoteHost
+            FileExists   = $true
+            Copied       = $false
+        }
+    } else {
+        # File does not exist, copy file to destination
+        Robocopy "$packageFile" "\\$remoteHost\$destination" $fileName /IS /NP /R:1
+
+        # Check if file was copied successfully
+        if (Test-Path -Path "\\$remoteHost\$filePath") {
+            # File was copied, write success message to host
+            Write-Host "File copied to $remoteHost" -ForegroundColor Green
+            # File was copied, add success result to array
+            $results += [PSCustomObject]@{
+                ComputerName = $remoteHost
+                FileExists   = $true
+                Copied       = $true
+            }
+        } else {
+            # File was not copied, write failure message to host
+            Write-Host "File not copied to $remoteHost" -ForegroundColor Red
+            # File was not copied, add failure result to array
+            $results += [PSCustomObject]@{
+                ComputerName = $remoteHost
+                FileExists   = $false
+                Copied       = $false
+            }
+        }
+    }
+}
+
+# Export results to CSV file
+$results | Export-Csv -Path "C:\WindowsUpdate_Copy_Results.csv" -NoTypeInformation
+
+# Write completion message to host
+Write-Host "Script completed. Results exported to C:\WindowsUpdate_Copy_Results.csv" -ForegroundColor Yellow
