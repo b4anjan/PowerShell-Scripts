@@ -1,0 +1,65 @@
+# Define paths
+$remoteHostsFile = "C:\SDPU\Scritps\Windows\Last25\21h2_last.txt"
+$logFile = "C:\SDPU\WindowsUpdate\Log\OS_Version_LogFile_$(Get-Date -Format 'yyyyMMdd').txt"
+
+# Clear console
+Clear-Host
+
+# Function to log messages
+function Write-Log {
+    param (
+        [string]$Message
+    )
+    "$Message" | Out-File -FilePath $logFile -Append
+}
+
+# Read remote hosts file
+if (-Not (Test-Path $remoteHostsFile)) {
+    Write-Log "ERROR: Hosts file not found at $remoteHostsFile."
+    exit
+}
+$computers = Get-Content -Path $remoteHostsFile
+
+# Create header row
+$logHeader = "PC Name`tWinVersion"
+Write-Log $logHeader
+
+# Loop through each computer
+foreach ($computer in $computers) {
+    Write-Host "Checking $computer..." -ForegroundColor Yellow
+    $pingResult = Test-Connection -ComputerName $computer -Count 1 -Quiet
+
+    if ($pingResult) {
+        Write-Host "$computer is online." -ForegroundColor Green
+        try {
+            # Get OS version from registry
+            $osVersion = Invoke-Command -ComputerName $computer -ScriptBlock {
+                (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").DisplayVersion
+            } -ErrorAction Stop
+
+            # Log result if not 23H2
+            if ($osVersion -ne '23H2') {
+                $logMessage = "$computer`t$osVersion"
+                Write-Log $logMessage
+
+            <# Remove the 'Log result if not 23H2' and add below 'Log result' if you want everything to record in log.
+            # Log result =============================================================================================
+            $logMessage = "$computer`t$osVersion"
+            Write-Log $logMessage
+            #>
+
+            }
+        }
+        catch {
+            Write-Log "ERROR: Could not retrieve information for $computer."
+        }
+    }
+    else {
+        Write-Host "$computer is offline." -ForegroundColor Red
+        $logMessage = "$computer`tOffline"
+        Write-Log $logMessage
+    }
+}
+
+Write-Log "Script execution completed."
+Write-Host "Log file saved to $logFile" -ForegroundColor Green
